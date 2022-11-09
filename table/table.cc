@@ -15,6 +15,11 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 
+#ifdef DEBUG_TXT
+extern size_t read_block_cache_count;
+extern size_t hit_block_cache_count;
+#endif
+
 namespace leveldb {
 
 struct Table::Rep {
@@ -170,8 +175,18 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
       EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
       EncodeFixed64(cache_key_buffer + 8, handle.offset());
       Slice key(cache_key_buffer, sizeof(cache_key_buffer));
+
+      #ifdef DEBUG_TXT
+      read_block_cache_count += 1;
+      #endif
+
       cache_handle = block_cache->Lookup(key);
       if (cache_handle != nullptr) {
+
+        #ifdef DEBUG_TXT
+        hit_block_cache_count += 1;
+        #endif
+        
         block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
       } else {
         s = ReadBlock(table->rep_->file, options, handle, &contents);

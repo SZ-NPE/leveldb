@@ -43,8 +43,13 @@ namespace {
 // Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
 int g_open_read_only_file_limit = -1;
 
+
+#ifdef DISABLE_MMAP
+constexpr const int kDefaultMmapLimit = 0;
+#else
 // Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
 constexpr const int kDefaultMmapLimit = (sizeof(void*) >= 8) ? 1000 : 0;
+#endif
 
 // Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
 int g_mmap_limit = kDefaultMmapLimit;
@@ -199,8 +204,21 @@ class PosixRandomAccessFile final : public RandomAccessFile {
   Status Read(uint64_t offset, size_t n, Slice* result,
               char* scratch) const override {
     int fd = fd_;
+
+    #ifdef ENABLE_DIRECT_IO
+      char* buffer;
+      int buffer_size = 2048;
+      uint64_t offset_ = offset / buffer_size * buffer_size;
+      size_t n_ = (n / buffer_size + 2) * buffer_size;
+      uint64_t z = offset % buffer_size;
+    #endif
+
     if (!has_permanent_fd_) {
-      fd = ::open(filename_.c_str(), O_RDONLY | kOpenBaseFlags);
+      #ifdef ENABLE_DIRECT_IO
+        fd = ::open(filename_.c_str(), (O_RDONLY | O_DIRECT) | kOpenBaseFlags);
+      #else
+        fd = ::open(filename_.c_str(), O_RDONLY | kOpenBaseFlags);
+      #endif
       if (fd < 0) {
         return PosixError(filename_, errno);
       }
@@ -209,8 +227,25 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     assert(fd != -1);
 
     Status status;
-    ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
-    *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
+
+    #ifdef ENABLE_DIRECT_IO
+      int r = posix_memalign((void**)&buffer, buffer_size, n_);
+      ssize_t read_size = ::pread(fd, buffer, n_, static_cast<off_t>(offset_));
+      memcpy(scratch, buffer + z, (read_size < 0) ? 0 : n);
+      *result = Slice(scratch, (read_size < 0) ? 0 : n);
+      free(buffer);
+
+      // std::shared_ptr<char> buffer(static_cast<char*>(aligned_alloc(buffer_size, n_)), free);
+      // char* buf = buffer.get();
+      // ssize_t read_size = ::pread(fd, buf, n_, static_cast<off_t>(offset_));
+      // // printf("BIO: n %llu, offset %llu \n", n, offset);
+      // // printf("DIO: n_ %llu, offset_ %llu, z %llu, read_size %llu \n", n_, offset_, z, read_size);
+      // *result = Slice(buf + z, (read_size < 0) ? 0 : n);
+
+    #else
+      ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
+      *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
+    #endif
     if (read_size < 0) {
       // An error: return a non-ok status.
       status = PosixError(filename_, errno);
@@ -540,7 +575,11 @@ class PosixEnv : public Env {
   Status NewRandomAccessFile(const std::string& filename,
                              RandomAccessFile** result) override {
     *result = nullptr;
-    int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
+    #ifdef ENABLE_DIRECT_IO
+      int fd = ::open(filename.c_str(), (O_RDONLY | O_DIRECT) | kOpenBaseFlags);
+    #else
+      int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
+    #endif
     if (fd < 0) {
       return PosixError(filename, errno);
     }

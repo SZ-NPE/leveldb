@@ -35,6 +35,13 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
+#ifdef DEBUG_TXT
+#include <iostream>
+size_t read_block_cache_count = 0;
+size_t hit_block_cache_count = 0;
+#endif
+
+
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -161,6 +168,11 @@ DBImpl::~DBImpl() {
   if (db_lock_ != nullptr) {
     env_->UnlockFile(db_lock_);
   }
+
+  #ifdef DEBUG_TXT
+  std::cout << "Read Block Cache count " << read_block_cache_count << std::endl;
+  std::cout << "Hit Block Cache count " << hit_block_cache_count << std::endl;
+  #endif
 
   delete versions_;
   if (mem_ != nullptr) mem_->Unref();

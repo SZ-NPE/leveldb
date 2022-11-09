@@ -6,6 +6,17 @@ cmake_minimum_required(VERSION 3.9)
 # Keep the version below in sync with the one in db.h
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 
+#**********************************************************************************
+# import by shunzi
+#**********************************************************************************
+# Debug with Breakpoints
+SET(CMAKE_BUILD_TYPE "Debug")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb ")
+add_definitions(-DDEBUG_TXT)
+add_definitions(-DDISABLE_MMAP)
+add_definitions(-DENABLE_DIRECT_IO) # with bug
+#**********************************************************************************
+
 # C standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_C_STANDARD)
   # This project can use C11, but will gracefully decay down to C89.
