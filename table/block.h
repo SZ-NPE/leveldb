@@ -28,6 +28,9 @@ class Block {
   size_t size() const { return size_; }
   Iterator* NewIterator(const Comparator* comparator);
 
+  bool is_direct = false;
+  char* original_buf;
+
  private:
   class Iter;
 

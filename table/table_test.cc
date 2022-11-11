@@ -116,7 +116,7 @@ class StringSource : public RandomAccessFile {
   uint64_t Size() const { return contents_.size(); }
 
   Status Read(uint64_t offset, size_t n, Slice* result,
-              char* scratch) const override {
+              char* scratch, char* direct_buffer, bool* is_direct) const override {
     if (offset >= contents_.size()) {
       return Status::InvalidArgument("invalid Read offset");
     }

@@ -213,9 +213,9 @@ class SpecialEnv : public EnvWrapper {
           : target_(target), counter_(counter) {}
       ~CountingFile() override { delete target_; }
       Status Read(uint64_t offset, size_t n, Slice* result,
-                  char* scratch) const override {
+                  char* scratch, char* direct_buffer, bool* is_direct) const override {
         counter_->Increment();
-        return target_->Read(offset, n, result, scratch);
+        return target_->Read(offset, n, result, scratch, direct_buffer, is_direct);
       }
     };
 

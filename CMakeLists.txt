@@ -10,8 +10,8 @@ project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 # import by shunzi
 #**********************************************************************************
 # Debug with Breakpoints
-SET(CMAKE_BUILD_TYPE "Debug")
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb ")
+# SET(CMAKE_BUILD_TYPE "Debug")
+# SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb ")
 add_definitions(-DDEBUG_TXT)
 add_definitions(-DDISABLE_MMAP)
 add_definitions(-DENABLE_DIRECT_IO) # with bug

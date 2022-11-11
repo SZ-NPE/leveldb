@@ -72,13 +72,45 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
   size_t n = static_cast<size_t>(handle.size());
   char* buf = new char[n + kBlockTrailerSize];
   Slice contents;
-  Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
+
+  bool is_direct = false;
+  #ifdef ENABLE_DIRECT_IO
+    size_t n_ = ((n + kBlockTrailerSize) / DIO_BUFFER_SIZE + 2) * DIO_BUFFER_SIZE;
+    // char* dio_buf = new char[n_]; // align
+    char* dio_buf = static_cast<char*>(aligned_alloc(DIO_BUFFER_SIZE, n_));
+    Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf, dio_buf, &is_direct);
+    result->is_direct = is_direct;
+    if (!is_direct) {
+      free(dio_buf);
+      result->original_buf = nullptr;
+    } else {
+      result->original_buf = dio_buf;
+    }
+  #else  
+    Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
+    result->is_direct = false;
+  #endif
+
   if (!s.ok()) {
     delete[] buf;
+    #ifdef ENABLE_DIRECT_IO
+    if (is_direct) {
+      free(dio_buf);
+      result->is_direct = false;
+      result->original_buf = nullptr;
+    }
+    #endif
     return s;
   }
   if (contents.size() != n + kBlockTrailerSize) {
     delete[] buf;
+    #ifdef ENABLE_DIRECT_IO
+    if (is_direct) {
+      free(dio_buf);
+      result->is_direct = false;
+      result->original_buf = nullptr;
+    }
+    #endif
     return Status::Corruption("truncated block read");
   }
 
@@ -89,6 +121,13 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
     const uint32_t actual = crc32c::Value(data, n + 1);
     if (actual != crc) {
       delete[] buf;
+      #ifdef ENABLE_DIRECT_IO
+      if (is_direct) {
+        free(dio_buf);
+        result->is_direct = false;
+        result->original_buf = nullptr;
+      }
+      #endif
       s = Status::Corruption("block checksum mismatch");
       return s;
     }
@@ -101,13 +140,30 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
         // Use it directly under the assumption that it will be live
         // while the file is open.
         delete[] buf;
-        result->data = Slice(data, n);
-        result->heap_allocated = false;
-        result->cachable = false;  // Do not double-cache
+        if (is_direct) {
+          #ifdef ENABLE_DIRECT_IO
+          result->data = Slice(data, n);
+          result->heap_allocated = true;
+          result->cachable = true;
+          result->is_direct = true;
+          #endif
+        } else {
+          result->data = Slice(data, n);
+          result->heap_allocated = false;
+          result->cachable = false;  // Do not double-cache
+        }
       } else {
         result->data = Slice(buf, n);
         result->heap_allocated = true;
         result->cachable = true;
+
+        // #ifdef ENABLE_DIRECT_IO
+        // if (is_direct) {
+        //   free(dio_buf);
+        //   result->is_direct = false;
+        //   result->original_buf = nullptr;
+        // }
+        // #endif
       }
 
       // Ok
@@ -116,15 +172,36 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
       size_t ulength = 0;
       if (!port::Snappy_GetUncompressedLength(data, n, &ulength)) {
         delete[] buf;
+        #ifdef ENABLE_DIRECT_IO
+        if (is_direct) {
+          free(dio_buf);
+          result->is_direct = false;
+          result->original_buf = nullptr;
+        }
+        #endif
         return Status::Corruption("corrupted compressed block contents");
       }
       char* ubuf = new char[ulength];
       if (!port::Snappy_Uncompress(data, n, ubuf)) {
         delete[] buf;
         delete[] ubuf;
+        #ifdef ENABLE_DIRECT_IO
+        if (is_direct) {
+          free(dio_buf);
+          result->is_direct = false;
+          result->original_buf = nullptr;        
+        }
+        #endif
         return Status::Corruption("corrupted compressed block contents");
       }
       delete[] buf;
+      #ifdef ENABLE_DIRECT_IO
+      if (is_direct) {
+        free(dio_buf);
+        result->is_direct = false;
+        result->original_buf = nullptr;
+      }
+      #endif
       result->data = Slice(ubuf, ulength);
       result->heap_allocated = true;
       result->cachable = true;
@@ -132,6 +209,13 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
     }
     default:
       delete[] buf;
+      #ifdef ENABLE_DIRECT_IO
+      if (is_direct) {
+        free(dio_buf);
+        result->is_direct = false;
+        result->original_buf = nullptr;
+      }
+      #endif
       return Status::Corruption("bad block type");
   }
 

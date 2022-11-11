@@ -202,15 +202,14 @@ class PosixRandomAccessFile final : public RandomAccessFile {
   }
 
   Status Read(uint64_t offset, size_t n, Slice* result,
-              char* scratch) const override {
+              char* scratch, char* direct_buffer, bool* is_direct) const override {
     int fd = fd_;
 
     #ifdef ENABLE_DIRECT_IO
       char* buffer;
-      int buffer_size = 2048;
-      uint64_t offset_ = offset / buffer_size * buffer_size;
-      size_t n_ = (n / buffer_size + 2) * buffer_size;
-      uint64_t z = offset % buffer_size;
+      uint64_t offset_ = offset / DIO_BUFFER_SIZE * DIO_BUFFER_SIZE;
+      size_t n_ = (n / DIO_BUFFER_SIZE + 2) * DIO_BUFFER_SIZE;
+      uint64_t z = offset % DIO_BUFFER_SIZE;
     #endif
 
     if (!has_permanent_fd_) {
@@ -229,18 +228,18 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     Status status;
 
     #ifdef ENABLE_DIRECT_IO
-      int r = posix_memalign((void**)&buffer, buffer_size, n_);
-      ssize_t read_size = ::pread(fd, buffer, n_, static_cast<off_t>(offset_));
-      memcpy(scratch, buffer + z, (read_size < 0) ? 0 : n);
-      *result = Slice(scratch, (read_size < 0) ? 0 : n);
-      free(buffer);
+      // int r = posix_memalign((void**)&buffer, DIO_BUFFER_SIZE, n_);
+      // ssize_t read_size = ::pread(fd, buffer, n_, static_cast<off_t>(offset_));
+      // memcpy(scratch, buffer + z, (read_size < 0) ? 0 : n);
+      // *result = Slice(scratch, (read_size < 0) ? 0 : n);
+      // free(buffer);
+      
 
-      // std::shared_ptr<char> buffer(static_cast<char*>(aligned_alloc(buffer_size, n_)), free);
-      // char* buf = buffer.get();
-      // ssize_t read_size = ::pread(fd, buf, n_, static_cast<off_t>(offset_));
+      ssize_t read_size = ::pread(fd, direct_buffer, n_, static_cast<off_t>(offset_));
       // // printf("BIO: n %llu, offset %llu \n", n, offset);
       // // printf("DIO: n_ %llu, offset_ %llu, z %llu, read_size %llu \n", n_, offset_, z, read_size);
-      // *result = Slice(buf + z, (read_size < 0) ? 0 : n);
+      *result = Slice(direct_buffer + z, (read_size < 0) ? 0 : n);
+      *is_direct = true;
 
     #else
       ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
@@ -292,7 +291,7 @@ class PosixMmapReadableFile final : public RandomAccessFile {
   }
 
   Status Read(uint64_t offset, size_t n, Slice* result,
-              char* scratch) const override {
+              char* scratch, char* direct_buffer, bool* is_direct) const override {
     if (offset + n > length_) {
       *result = Slice();
       return PosixError(filename_, EINVAL);

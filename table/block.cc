@@ -25,7 +25,9 @@ inline uint32_t Block::NumRestarts() const {
 Block::Block(const BlockContents& contents)
     : data_(contents.data.data()),
       size_(contents.data.size()),
-      owned_(contents.heap_allocated) {
+      owned_(contents.heap_allocated),
+      is_direct(contents.is_direct),
+      original_buf(contents.original_buf) {
   if (size_ < sizeof(uint32_t)) {
     size_ = 0;  // Error marker
   } else {
@@ -41,7 +43,16 @@ Block::Block(const BlockContents& contents)
 
 Block::~Block() {
   if (owned_) {
-    delete[] data_;
+    if (is_direct) {
+      #ifdef ENABLE_DIRECT_IO
+      if (original_buf) {
+        free(original_buf);
+        original_buf = nullptr;
+      }
+      #endif
+  } else {
+      delete[] data_;
+    }
   }
 }
 

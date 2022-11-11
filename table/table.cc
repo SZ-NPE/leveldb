@@ -25,7 +25,16 @@ namespace leveldb {
 struct Table::Rep {
   ~Rep() {
     delete filter;
-    delete[] filter_data;
+    if (is_direct) {
+      #ifdef ENABLE_DIRECT_IO
+      if (original_buf) {
+        free(original_buf);
+        original_buf = nullptr;
+      }
+      #endif
+    } else {
+      delete[] filter_data;
+    }
     delete index_block;
   }
 
@@ -35,6 +44,8 @@ struct Table::Rep {
   uint64_t cache_id;
   FilterBlockReader* filter;
   const char* filter_data;
+  bool is_direct = false;
+  char* original_buf;
 
   BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
   Block* index_block;
@@ -47,10 +58,21 @@ Status Table::Open(const Options& options, RandomAccessFile* file,
     return Status::Corruption("file is too short to be an sstable");
   }
 
-  char footer_space[Footer::kEncodedLength];
-  Slice footer_input;
-  Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
-                        &footer_input, footer_space);
+  #ifdef ENABLE_DIRECT_IO
+    bool is_direct = false;
+    size_t n_ = (Footer::kEncodedLength / DIO_BUFFER_SIZE + 2) * DIO_BUFFER_SIZE;
+    std::shared_ptr<char> dio_buf(static_cast<char*>(aligned_alloc(DIO_BUFFER_SIZE, n_)), free);
+    char footer_space[Footer::kEncodedLength];
+    Slice footer_input;
+    Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
+                          &footer_input, footer_space, dio_buf.get(), &is_direct);
+
+  #else
+    char footer_space[Footer::kEncodedLength];
+    Slice footer_input;
+    Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
+                          &footer_input, footer_space);
+  #endif
   if (!s.ok()) return s;
 
   Footer footer;
@@ -132,8 +154,17 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   }
   if (block.heap_allocated) {
     rep_->filter_data = block.data.data();  // Will need to delete later
+    #ifdef ENABLE_DIRECT_IO
+    rep_->is_direct = block.is_direct;
+    rep_->original_buf = block.original_buf;
+    #endif
   }
   rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
+}
+
+void Table::ResetOriginalBuf() {
+  rep_->original_buf = nullptr;
+  rep_->index_block->original_buf = nullptr;
 }
 
 Table::~Table() { delete rep_; }
@@ -144,6 +175,7 @@ static void DeleteBlock(void* arg, void* ignored) {
 
 static void DeleteCachedBlock(const Slice& key, void* value) {
   Block* block = reinterpret_cast<Block*>(value);
+  // block->original_buf = nullptr;
   delete block;
 }
 

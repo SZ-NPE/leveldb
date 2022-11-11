@@ -18,6 +18,9 @@ struct TableAndFile {
 
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
+  // #ifdef ENABLE_DIRECT_IO
+  //   tf->table->ResetOriginalBuf();
+  // #endif
   delete tf->table;
   delete tf->file;
   delete tf;

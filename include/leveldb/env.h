@@ -13,6 +13,8 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
 #define STORAGE_LEVELDB_INCLUDE_ENV_H_
 
+#define DIO_BUFFER_SIZE 512
+
 #include <cstdarg>
 #include <cstdint>
 #include <string>
@@ -268,7 +270,7 @@ class LEVELDB_EXPORT RandomAccessFile {
   //
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const = 0;
+                      char* scratch, char* direct_buffer = nullptr, bool* is_direct = nullptr) const = 0;
 };
 
 // A file abstraction for sequential writing.  The implementation
