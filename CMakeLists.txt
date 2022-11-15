@@ -9,12 +9,29 @@ project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 #**********************************************************************************
 # import by shunzi
 #**********************************************************************************
-# Debug with Breakpoints
-# SET(CMAKE_BUILD_TYPE "Debug")
-# SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb ")
-add_definitions(-DDEBUG_TXT)
-add_definitions(-DDISABLE_MMAP)
-add_definitions(-DENABLE_DIRECT_IO) # with bug
+
+option(ENABLE_DEBUG_MODE "Enable debug mode" OFF)
+option(DEBUG_TXT "Enable debug txt output" ON)
+option(DISABLE_MMAP "Disable mmap for i/o" OFF)
+option(DIRECT_IO "Enable Direct IO for read" OFF)
+
+if(ENABLE_DEBUG_MODE)
+  # Debug with Breakpoints
+  SET(CMAKE_BUILD_TYPE "Debug")
+  SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb ")
+endif(ENABLE_DEBUG_MODE)
+
+if(DEBUG_TXT)
+  add_definitions(-DDEBUG_TXT)
+endif(DEBUG_TXT)
+
+if(DISABLE_MMAP)
+  add_definitions(-DDISABLE_MMAP)
+endif(DISABLE_MMAP)
+
+if(DIRECT_IO)
+  add_definitions(-DENABLE_DIRECT_IO)
+endif(DIRECT_IO)
 #**********************************************************************************
 
 # C standard can be overridden when this is used as a sub-project.
